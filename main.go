@@ -9,6 +9,8 @@ We import 4 important libraries
 
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"net/http"
@@ -21,43 +23,80 @@ type Welcome struct {
 	Time string
 }
 
-// Go application entrypoint
-func main() {
-	// Instatiate a Welcome struct object and pass in some random information
-	// We shall get the name of the user as a query parameter from the URL
+/**
+	Controller to handle Welcome page
+ */
+func welcomeController(w http.ResponseWriter, r *http.Request) {
 	welcome := Welcome{"Anonymous", time.Now().Format(time.Stamp)}
-
-	// We tell Go exactly where we can find our html file. We ask Go to parse the html file (Notice the relative path).
-	// We wrap it in a call to templates.Must() which handles any errors and halts if there are fatal errors
-
 	templates := template.Must(template.ParseFiles("templates/welcome-template.html"))
 
-	// Out HTML comes with CSS that go needs to provide when we run the app.
-	// Here we tell go to create a handle that looks in the static directory, go then uses the "/static/" as a url that our html can refer to
-	// when looking for our css and other files.
+	if name := r.FormValue("name"); name !="" {
+		welcome.Name = name;
+	}
+	// If errors show an internal server error message
+	// I also pass the welcome struct to the welcome-templates.html file.
+
+	if err := templates.ExecuteTemplate(w, "welcome-template.html", welcome); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+
+	}
+}
+
+func balancesController(w http.ResponseWriter, r *http.Request) {
+	// @section1: reading the response body
+	type Balance struct{
+		Address string
+		Contract string
+	}
+
+	var b Balance
+
+	if r.Body == nil {
+		http.Error(w, "Please send a request body", 400)
+		return
+	}
+
+	err := json.NewDecoder(r.Body).Decode(&b)
+
+	if err != nil {
+		http.Error(w, err.Error(), 400)
+		return
+	}
+
+	fmt.Println("Post request received. It's payload ->")
+	fmt.Println("Address:" + b.Address)
+	fmt.Println("Contract:" + b.Contract)
+
+	// @section2: creating a post request to heroku api
+	x := new(bytes.Buffer)
+	json.NewEncoder(x).Encode(b)
+	res, _ := http.Post("https://web3-challenge-heroku.herokuapp.com/balances", "application/json; charset=utf-8", x)
+
+	type BalanceAPIResponse struct{
+		Balance string
+	}
+
+	var bar BalanceAPIResponse
+
+	json.NewDecoder(res.Body).Decode(&bar)
+
+	fmt.Println("Post request to heroku working. It's a response payload ->")
+	fmt.Println("Balance:" + bar.Balance)
+
+	// @section3 : sending bac to the user a JSON payload
+	json.NewEncoder(w).Encode(bar)
+}
+
+// Go application entrypoint
+func main() {
 
 	http.Handle("/static/", // final url can be anything
 		http.StripPrefix("/static/",
-			http.FileServer(http.Dir("static")))) // Go looks in the relative "static" directory first using http.FileServer(), then matches it to a
-			// url of our choice as shown in http.Handle("/static/").
-			// This url is what we need when referencing our css files once the server begins.
-			// Our html code would therefore be <link rel="stylesheet" href="/static/stylesheet/...">
-			// It is important to note the url in http.Handle can be whatever we like, so long as we are consistent.
+			http.FileServer(http.Dir("static"))))
 
-	// This method takes in the URL path "/" and a function that takes in a response writer, and a http request.
-	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
-		// Takes the name from the URL query e.g ?name=Martin, will set welcome.Name = Martin
-		if name := request.FormValue("name"); name !="" {
-			welcome.Name = name;
-		}
-		// If errors show an internal server error message
-		// I also pass the welcome struct to the welcome-templates.html file.
-
-		if err := templates.ExecuteTemplate(writer, "welcome-template.html", welcome); err != nil {
-			http.Error(writer, err.Error(), http.StatusInternalServerError)
-
-		}
-	})
+	// Routing
+	http.HandleFunc("/", welcomeController)
+	http.HandleFunc("/balances", balancesController)
 
 	// Start the web server, set the port to listen to 8080. Without a path it assumes localhost
 	// Print any errors from starting the webserver using fmt
