@@ -7,13 +7,15 @@ We import 4 important libraries
 4. "time" - a library for working with date and time.
  */
 
-
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/gorilla/mux"
 	"html/template"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"time"
 )
 
@@ -22,6 +24,15 @@ type Welcome struct {
 	Name string
 	Time string
 }
+
+type Customer struct {
+	ID string `json:"id"`
+	Name string `json:"name"`
+	Phone string `json:"phone"`
+	Email string `json:"email"`
+}
+
+var customers []Customer
 
 /**
 	Controller to handle Welcome page
@@ -87,10 +98,35 @@ func balancesController(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(bar)
 }
 
+
 // Go application entrypoint
 func main() {
+	/**
+		With Gorilla Mux Router
+	 */
+	router := mux.NewRouter()
 
-	http.Handle("/static/", // final url can be anything
+	// Mock Data
+	customers = append(customers, Customer{ID: "1", Name: "Fadlika Dita Nurjanto", Phone: "0851672719", Email: "fadlikadn@gmail.com" })
+	customers = append(customers, Customer{ID: "2", Name: "Fauzan Ibnu Prihadiyono", Phone: "0851672789", Email: "fauzanibnup@gmail.com" })
+	customers = append(customers, Customer{ID: "3", Name: "Fauzi Triagung Wiguna", Phone: "0812671872", Email: "fauzitri@gmail.com" })
+
+	router.HandleFunc("/", welcomeController).Methods("GET")
+	router.HandleFunc("/balances", balancesController).Methods("POST")
+
+	router.HandleFunc("/customers", getCustomers).Methods("GET")
+	router.HandleFunc("/customers", createCustomers).Methods("POST")
+	router.HandleFunc("/customers/{id}", getCustomer).Methods("GET")
+	router.HandleFunc("/customers/{id}", updateCustomer).Methods("PUT")
+	router.HandleFunc("/customers/{id}", deleteCustomer).Methods("DELETE")
+
+	http.ListenAndServe(":8080", router)
+
+
+	/**
+		Without Gorilla Mux Router
+	 */
+	/*http.Handle("/static/", // final url can be anything
 		http.StripPrefix("/static/",
 			http.FileServer(http.Dir("static"))))
 
@@ -98,10 +134,65 @@ func main() {
 	http.HandleFunc("/", welcomeController)
 	http.HandleFunc("/balances", balancesController)
 
-	// Start the web server, set the port to listen to 8080. Without a path it assumes localhost
-	// Print any errors from starting the webserver using fmt
 	fmt.Println("Listening")
-	fmt.Println(http.ListenAndServe(":8080", nil));
+	fmt.Println(http.ListenAndServe(":8080", nil));*/
+}
+
+func deleteCustomer(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	params := mux.Vars(r)
+	for index, item := range customers {
+		if item.ID == params["id"] {
+			customers = append(customers[:index], customers[index+1:]...)
+			break
+		}
+	}
+	json.NewEncoder(w).Encode(customers)
+}
+
+func updateCustomer(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	params := mux.Vars(r)
+	for index, item := range customers {
+		if item.ID == params["id"] {
+			customers = append(customers[:index], customers[index+1:]...)
+
+			var customer Customer
+			_ = json.NewDecoder(r.Body).Decode(&customer)
+			customer.ID = params["id"]
+			customers = append(customers, customer)
+			json.NewEncoder(w).Encode(&customer)
+
+			return
+		}
+	}
+	json.NewEncoder(w).Encode(customers)
+}
+
+func getCustomer(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	params := mux.Vars(r)
+	for _, item := range customers {
+		if item.ID == params["id"] {
+			json.NewEncoder(w).Encode(item)
+			return
+		}
+	}
+	json.NewEncoder(w).Encode(&Customer{})
+}
+
+func createCustomers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	var customer Customer
+	_ = json.NewDecoder(r.Body).Decode(&customer)
+	customer.ID = strconv.Itoa(rand.Intn(1000000))
+	customers = append(customers, customer)
+	json.NewEncoder(w).Encode(&customer)
+}
+
+func getCustomers(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(customers)
 }
 
 
